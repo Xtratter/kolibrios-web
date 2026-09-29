@@ -19,6 +19,7 @@ STATE = os.environ.get("KOLIBRI_STATE", "/var/lib/kolibri-update")
 LOG = os.path.join(STATE, "update.log")
 UPDATE = "/usr/local/bin/kolibri-update"
 LANG = os.environ.get("KOLIBRI_LANG", "ru_RU")
+UI_LANG = os.environ.get("KOLIBRI_UI_LANG", "ru")
 SUMS_URL = f"https://builds.kolibrios.org/{LANG}/sha256sums.txt"
 
 _upstream = {"at": 0, "build": None, "error": None}
@@ -107,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/update":
             if update_running():
-                return self.send_json(409, {"error": "Обновление уже выполняется"})
+                return self.send_json(409, {"error": "An update is already running" if UI_LANG == "en" else "Обновление уже выполняется"})
             args = [UPDATE] + (["--force"] if body.get("force") else [])
             subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)

@@ -6,10 +6,11 @@
 #   sudo ./install.sh --yes        take defaults / environment values, no questions
 #   sudo ./install.sh --uninstall  remove what the installer created
 #
-# Every answer can be preset in the environment: DOMAIN, NGINX_MODE (site|snippet),
-# PREFIX, WEBROOT, HTTPS (yes|no), LE_EMAIL, KOLIBRI_LANG, ADMIN_USER,
-# ADMIN_PASSWORD, ADMIN_PORT. Running it again updates an existing install and
-# keeps downloaded builds and the admin password (unless a new one is given).
+# Every answer can be preset in the environment: UI_LANG (ru|en), DOMAIN,
+# NGINX_MODE (site|snippet), PREFIX, WEBROOT, HTTPS (yes|no), LE_EMAIL,
+# KOLIBRI_LANG, ADMIN_USER, ADMIN_PASSWORD, ADMIN_PORT. Running it again updates
+# an existing install and keeps downloaded builds and the admin password
+# (unless a new one is given).
 set -euo pipefail
 
 REPO_URL=https://github.com/Xtratter/kolibrios-web
@@ -17,17 +18,21 @@ CONF=/etc/kolibrios-web.conf        # answers of the last run, reused as default
 STATE=/var/lib/kolibri-update
 CREDS=/root/kolibrios-admin.txt
 ASSUME_YES=0
+SAVED_KEYS='UI_LANG|DOMAIN|NGINX_MODE|PREFIX|WEBROOT|HTTPS|LE_EMAIL|KOLIBRI_LANG|ADMIN_USER|ADMIN_PORT'
 
 # ---------------------------------------------------------------- helpers
 
 if [ -t 1 ]; then B=$'\e[1m' G=$'\e[32m' Y=$'\e[33m' R=$'\e[31m' N=$'\e[0m'; else B= G= Y= R= N=; fi
+
+# T "русский" "english": text in the installer's language.
+T() { if [ "${UI_LANG:-en}" = ru ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n%s==> %s%s\n' "$B" "$*" "$N"; }
 ok()   { printf '%s✓%s %s\n' "$G" "$N" "$*"; }
 warn() { printf '%s!%s %s\n' "$Y" "$N" "$*"; }
-die()  { printf '%sОшибка:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
+die()  { printf '%s%s%s %s\n' "$R" "$(T "Ошибка:" "Error:")" "$N" "$*" >&2; exit 1; }
 
-# ask VAR "Вопрос" default — keeps a preset $VAR, otherwise prompts (or takes the default with --yes)
+# ask VAR "question" default — keeps a preset $VAR, otherwise prompts (or takes the default with --yes)
 ask() {
     local var=$1 question=$2 def=${3:-} answer
     if [ -n "${!var:-}" ]; then return; fi
@@ -36,7 +41,7 @@ ask() {
     printf -v "$var" '%s' "${answer:-$def}"
 }
 
-# choose VAR "Вопрос" default option... — numbered menu, stores the chosen option
+# choose VAR "question" default "value|label"... — numbered menu, stores the chosen value
 choose() {
     local var=$1 question=$2 def=$3; shift 3
     if [ -n "${!var:-}" ]; then return; fi
@@ -50,7 +55,7 @@ choose() {
     done
     local n
     while true; do
-        read -r -p "Выбор [$defn]: " n
+        read -r -p "$(T "Выбор" "Choice") [$defn]: " n
         n=${n:-$defn}
         if [[ $n =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le $# ]; then
             opt=${!n}
@@ -61,43 +66,53 @@ choose() {
 }
 
 yesno() { case "${1,,}" in y|yes|д|да|1|true) return 0;; *) return 1;; esac; }
+YES() { T "да" "yes"; }
+NO()  { T "нет" "no"; }
+YN()  { T "(да/нет)" "(yes/no)"; }
 have_systemd() { [ -d /run/systemd/system ]; }
 
-# ---------------------------------------------------------------- arguments
+# ---------------------------------------------------------------- arguments & defaults
 
 UNINSTALL=0
 for arg in "$@"; do
     case $arg in
         -y|--yes) ASSUME_YES=1 ;;
         --uninstall) UNINSTALL=1 ;;
-        -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-        *) die "неизвестный параметр $arg" ;;
+        -h|--help) sed -n '2,14p' "${BASH_SOURCE[0]:-install.sh}" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) die "$(T "неизвестный параметр" "unknown option") $arg" ;;
     esac
 done
-
-[ "$(id -u)" = 0 ] || die "запустите через sudo"
-command -v apt-get >/dev/null || die "поддерживаются только Debian и Ubuntu (нужен apt-get)"
 
 # Answers from a previous run become defaults (environment still wins).
 if [ -f "$CONF" ]; then
     while IFS='=' read -r k v; do
-        [[ $k =~ ^(DOMAIN|NGINX_MODE|PREFIX|WEBROOT|HTTPS|LE_EMAIL|KOLIBRI_LANG|ADMIN_USER|ADMIN_PORT)$ ]] || continue
+        [[ $k =~ ^($SAVED_KEYS)$ ]] || continue
         [ -n "${!k:-}" ] || printf -v "PREV_$k" '%s' "$v"
     done < "$CONF"
 fi
 prev() { local v="PREV_$1"; printf '%s' "${!v:-$2}"; }
+
+# Installer language until asked: previous run, else the system locale.
+DEFAULT_UI=$(prev UI_LANG "$(case "${LC_ALL:-${LANG:-}}" in ru*) echo ru;; *) echo en;; esac)")
+UI_LANG_PRESET=${UI_LANG:-}
+UI_LANG=${UI_LANG:-$DEFAULT_UI}
+
+[ "$(id -u)" = 0 ] || die "$(T "запустите через sudo" "run it with sudo")"
+command -v apt-get >/dev/null || die "$(T "поддерживаются только Debian и Ubuntu (нужен apt-get)" "only Debian and Ubuntu are supported (apt-get is required)")"
 
 # ---------------------------------------------------------------- uninstall
 
 if [ $UNINSTALL = 1 ]; then
     WEBROOT=${WEBROOT:-$(prev WEBROOT /var/www/kolibrios)}; PREFIX=${PREFIX:-$(prev PREFIX /)}
     SITE_DIR=${WEBROOT%/}${PREFIX%/}
-    step "Удаление KolibriOS-сайта"
-    say "Будут удалены: сервисы kolibri-*, /usr/local/bin/kolibri-update, /usr/local/lib/kolibri,"
-    say "конфигурация nginx этого сайта, $STATE, $CONF."
-    say "Каталог сайта $SITE_DIR (со скачанными сборками) удаляется отдельно по вашему выбору."
-    ask CONFIRM "Продолжить? (да/нет)" "$([ $ASSUME_YES = 1 ] && echo да || echo нет)"
-    yesno "$CONFIRM" || { say "Отменено."; exit 0; }
+    step "$(T "Удаление KolibriOS-сайта" "Removing the KolibriOS site")"
+    say "$(T "Будут удалены: сервисы kolibri-*, /usr/local/bin/kolibri-update, /usr/local/lib/kolibri," \
+             "To be removed: kolibri-* services, /usr/local/bin/kolibri-update, /usr/local/lib/kolibri,")"
+    say "$(T "конфигурация nginx этого сайта, $STATE, $CONF." "this site's nginx configuration, $STATE, $CONF.")"
+    say "$(T "Каталог сайта $SITE_DIR (со скачанными сборками) удаляется отдельно по вашему выбору." \
+             "The site directory $SITE_DIR (with downloaded builds) is removed only if you choose so.")"
+    ask CONFIRM "$(T "Продолжить?" "Continue?") $(YN)" "$([ $ASSUME_YES = 1 ] && YES || NO)"
+    yesno "$CONFIRM" || { say "$(T "Отменено." "Cancelled.")"; exit 0; }
     if have_systemd; then
         systemctl disable --now kolibri-update.timer kolibri-admin.service 2>/dev/null || true
     fi
@@ -106,96 +121,104 @@ if [ $UNINSTALL = 1 ]; then
     rm -f /usr/local/bin/kolibri-update /etc/nginx/snippets/kolibrios.conf /etc/nginx/kolibri-admin.htpasswd
     rm -f /etc/nginx/sites-enabled/kolibrios /etc/nginx/sites-available/kolibrios
     rm -rf /usr/local/lib/kolibri "$STATE" "$CONF"
-    ask REMOVE_SITE "Удалить и каталог сайта $SITE_DIR? (да/нет)" "нет"
+    ask REMOVE_SITE "$(T "Удалить и каталог сайта $SITE_DIR?" "Also remove the site directory $SITE_DIR?") $(YN)" "$(NO)"
     yesno "$REMOVE_SITE" && rm -rf "$SITE_DIR"
     if nginx -t 2>/dev/null; then
         have_systemd && systemctl reload nginx || nginx -s reload 2>/dev/null || true
     else
-        warn "nginx -t сообщает об ошибке: если вы подключали snippet вручную, уберите строку include."
+        warn "$(T "nginx -t сообщает об ошибке: если вы подключали snippet вручную, уберите строку include." \
+                  "nginx -t reports an error: if you included the snippet by hand, remove that include line.")"
     fi
-    ok "Удалено. Пакеты (nginx, 7zip и др.) и сертификаты Let's Encrypt оставлены."
+    ok "$(T "Удалено. Пакеты (nginx, 7zip и др.) и сертификаты Let's Encrypt оставлены." \
+            "Removed. Packages (nginx, 7zip, ...) and Let's Encrypt certificates are kept.")"
     exit 0
 fi
 
 # ---------------------------------------------------------------- source files
 
-SRC=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+SRC=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)
 if [ ! -f "$SRC/web/app.js" ]; then
-    # Run via "curl ... | bash" or copied alone: fetch the project.
-    command -v git >/dev/null || apt-get install -y -qq git >/dev/null
+    # Run via "bash -c $(curl ...)" or copied alone: fetch the project.
+    command -v git >/dev/null || apt-get install -y -qq git >/dev/null </dev/null
     SRC=/opt/kolibrios-web
     if [ -d $SRC/.git ]; then git -C $SRC pull -q; else git clone -q --depth 1 $REPO_URL $SRC; fi
-    ok "Файлы проекта: $SRC"
+    ok "$(T "Файлы проекта" "Project files"): $SRC"
 fi
 
 # ---------------------------------------------------------------- questions
 
-step "Настройка"
-say "Нажмите Enter, чтобы принять значение в скобках."
+UI_LANG=$UI_LANG_PRESET
+choose UI_LANG "Язык / Language:" "$DEFAULT_UI" "ru|Русский" "en|English"
+
+step "$(T "Настройка" "Setup")"
+say "$(T "Нажмите Enter, чтобы принять значение в скобках." "Press Enter to accept the value in brackets.")"
 say
 
-ask DOMAIN "Домен сайта (пусто — открывать по IP-адресу, без HTTPS)" "$(prev DOMAIN "")"
+ask DOMAIN "$(T "Домен сайта (пусто — открывать по IP-адресу, без HTTPS)" "Site domain (empty: open by IP address, no HTTPS)")" "$(prev DOMAIN "")"
 DOMAIN=${DOMAIN,,}
-[ -z "$DOMAIN" ] || [[ $DOMAIN =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "некорректный домен: $DOMAIN"
+[ -z "$DOMAIN" ] || [[ $DOMAIN =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "$(T "некорректный домен" "invalid domain"): $DOMAIN"
 
-choose NGINX_MODE "Как подключить к nginx?" "$(prev NGINX_MODE site)" \
-    "site|Отдельный сайт для этого домена (installer создаст server {} сам)" \
-    "snippet|Добавить к уже настроенному сайту (вы подключите файл include сами)"
+choose NGINX_MODE "$(T "Как подключить к nginx?" "How to connect to nginx?")" "$(prev NGINX_MODE site)" \
+    "site|$(T "Отдельный сайт для этого домена (установщик создаст server {} сам)" "Separate site for this domain (the installer creates the server {} block)")" \
+    "snippet|$(T "Добавить к уже настроенному сайту (вы подключите файл include сами)" "Add to an existing site (you include the generated file yourself)")"
 
 if [ "$NGINX_MODE" = site ]; then
-    ask PREFIX "Путь на сайте" "$(prev PREFIX /)"
-    ask WEBROOT "Каталог для файлов сайта" "$(prev WEBROOT /var/www/kolibrios)"
+    ask PREFIX "$(T "Путь на сайте" "Path on the site")" "$(prev PREFIX /)"
+    ask WEBROOT "$(T "Каталог для файлов сайта" "Directory for the site files")" "$(prev WEBROOT /var/www/kolibrios)"
 else
-    ask PREFIX "Путь на сайте (не занятый другим содержимым)" "$(prev PREFIX /kolibri/)"
-    ask WEBROOT "Значение root в вашем server {} (корень сайта)" "$(prev WEBROOT /var/www/html)"
+    ask PREFIX "$(T "Путь на сайте (не занятый другим содержимым)" "Path on the site (not used by other content)")" "$(prev PREFIX /kolibri/)"
+    ask WEBROOT "$(T "Значение root в вашем server {} (корень сайта)" "The root of your server {} block (site root)")" "$(prev WEBROOT /var/www/html)"
 fi
 PREFIX="/${PREFIX#/}"; PREFIX="${PREFIX%/}/"; PREFIX=${PREFIX//\/\//\/}
-[[ $PREFIX =~ ^/[A-Za-z0-9._/-]*$ ]] || die "некорректный путь: $PREFIX"
+[[ $PREFIX =~ ^/[A-Za-z0-9._/-]*$ ]] || die "$(T "некорректный путь" "invalid path"): $PREFIX"
 WEBROOT=${WEBROOT%/}
 SITE_DIR=$WEBROOT${PREFIX%/}
 
 if [ "$NGINX_MODE" = site ] && [ -n "$DOMAIN" ]; then
-    ask HTTPS "Получить бесплатный HTTPS-сертификат Let's Encrypt? (да/нет)" "$(prev HTTPS да)"
+    ask HTTPS "$(T "Получить бесплатный HTTPS-сертификат Let's Encrypt?" "Get a free Let's Encrypt HTTPS certificate?") $(YN)" "$(prev HTTPS "$(YES)")"
     if yesno "$HTTPS"; then
-        ask LE_EMAIL "Email для Let's Encrypt (уведомления об истечении сертификата)" "$(prev LE_EMAIL "")"
+        ask LE_EMAIL "$(T "Email для Let's Encrypt (уведомления об истечении сертификата)" "Email for Let's Encrypt (certificate expiry notices)")" "$(prev LE_EMAIL "")"
     fi
 else
-    HTTPS=${HTTPS:-нет}
+    HTTPS=${HTTPS:-no}
 fi
 if [ "$NGINX_MODE" = site ] && [ -z "$DOMAIN" ] && { [ -L /etc/nginx/sites-enabled/default ] || [ ! -d /etc/nginx ]; }; then
-    ask REMOVE_DEFAULT "Без домена сайт займёт адрес сервера целиком. Отключить стандартный сайт nginx «default»? (да/нет)" "да"
+    ask REMOVE_DEFAULT "$(T "Без домена сайт займёт адрес сервера целиком. Отключить стандартный сайт nginx «default»?" \
+                            "Without a domain the site takes over the server address. Disable nginx's stock \"default\" site?") $(YN)" "$(YES)"
 fi
 
-choose KOLIBRI_LANG "Язык сборок KolibriOS:" "$(prev KOLIBRI_LANG ru_RU)" \
+choose KOLIBRI_LANG "$(T "Язык сборок KolibriOS:" "KolibriOS build language:")" "$(prev KOLIBRI_LANG "$(T ru_RU en_US)")" \
     "ru_RU|Русский" "en_US|English" "es_ES|Español" "it_IT|Italiano" "et_EE|Eesti"
 
-ask ADMIN_USER "Логин админ-страницы" "$(prev ADMIN_USER admin)"
-[[ $ADMIN_USER =~ ^[A-Za-z0-9._-]+$ ]] || die "логин: только латиница, цифры, . _ -"
+ask ADMIN_USER "$(T "Логин админ-страницы" "Admin page login")" "$(prev ADMIN_USER admin)"
+[[ $ADMIN_USER =~ ^[A-Za-z0-9._-]+$ ]] || die "$(T "логин: только латиница, цифры, . _ -" "login: Latin letters, digits, . _ - only")"
 if [ -z "${ADMIN_PASSWORD:-}" ] && ! [ -s /etc/nginx/kolibri-admin.htpasswd ] && [ $ASSUME_YES = 0 ] && [ -t 0 ]; then
-    read -r -s -p "Пароль админ-страницы (пусто — сгенерировать): " ADMIN_PASSWORD; echo
+    read -r -s -p "$(T "Пароль админ-страницы (пусто — сгенерировать)" "Admin page password (empty: generate one)"): " ADMIN_PASSWORD; echo
 fi
-ask ADMIN_PORT "Локальный порт бэкенда админки" "$(prev ADMIN_PORT 8095)"
-[[ $ADMIN_PORT =~ ^[0-9]+$ ]] || die "порт должен быть числом"
+ask ADMIN_PORT "$(T "Локальный порт бэкенда админки" "Local port for the admin backend")" "$(prev ADMIN_PORT 8095)"
+[[ $ADMIN_PORT =~ ^[0-9]+$ ]] || die "$(T "порт должен быть числом" "the port must be a number")"
 
 HOST=${DOMAIN:-$(hostname -I 2>/dev/null | awk '{print $1}')}
 SCHEME=http; yesno "$HTTPS" && SCHEME=https
-[ "$NGINX_MODE" = snippet ] && SCHEME="https (или http)"
+[ "$NGINX_MODE" = snippet ] && SCHEME="https"
 URL="$SCHEME://$HOST$PREFIX"
 
-step "Проверьте настройки"
+step "$(T "Проверьте настройки" "Review the settings")"
 cat <<EOF
-  Адрес сайта:        $URL
-  Подключение nginx:  $([ "$NGINX_MODE" = site ] && echo "отдельный сайт" || echo "snippet для существующего сайта")
-  Файлы сайта:        $SITE_DIR
-  HTTPS:              $(yesno "$HTTPS" && echo "Let's Encrypt" || echo "нет")
-  Сборки KolibriOS:   $KOLIBRI_LANG, автообновление раз в сутки
-  Админ-страница:     ${URL%/}/admin/ (логин $ADMIN_USER)
+  $(T "Язык сайта и установщика: " "Site/installer language:  ") $([ "$UI_LANG" = ru ] && echo Русский || echo English)
+  $(T "Адрес сайта:              " "Site address:             ") $URL
+  $(T "Подключение nginx:        " "nginx integration:        ") $([ "$NGINX_MODE" = site ] && T "отдельный сайт" "separate site" || T "snippet для существующего сайта" "snippet for an existing site")
+  $(T "Файлы сайта:              " "Site files:               ") $SITE_DIR
+  HTTPS:                     $(yesno "$HTTPS" && echo "Let's Encrypt" || NO)
+  $(T "Сборки KolibriOS:         " "KolibriOS builds:         ") $KOLIBRI_LANG, $(T "автообновление раз в сутки" "updated daily")
+  $(T "Админ-страница:           " "Admin page:               ") ${URL%/}/admin/ ($(T "логин" "login") $ADMIN_USER)
 EOF
-ask CONFIRM "Устанавливать? (да/нет)" "да"
-yesno "$CONFIRM" || { say "Отменено."; exit 0; }
+ask CONFIRM "$(T "Устанавливать?" "Install?") $(YN)" "$(YES)"
+yesno "$CONFIRM" || { say "$(T "Отменено." "Cancelled.")"; exit 0; }
 
 # Remember answers (not the password) for the next run.
 cat > "$CONF" <<EOF
+UI_LANG=$UI_LANG
 DOMAIN=$DOMAIN
 NGINX_MODE=$NGINX_MODE
 PREFIX=$PREFIX
@@ -211,7 +234,7 @@ exec </dev/null  # all questions are asked; keep apt & co from reading the termi
 
 # ---------------------------------------------------------------- packages
 
-step "Установка пакетов"
+step "$(T "Установка пакетов" "Installing packages")"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 pkgs=(nginx curl ca-certificates python3 dosfstools mtools fdisk openssl gzip)
@@ -219,16 +242,18 @@ yesno "$HTTPS" && pkgs+=(certbot python3-certbot-nginx)
 apt-get install -y -qq "${pkgs[@]}" >/dev/null
 # "7zip" on newer releases, "p7zip-full" on older ones.
 apt-get install -y -qq 7zip >/dev/null 2>&1 || apt-get install -y -qq p7zip-full >/dev/null
-command -v 7z >/dev/null || command -v 7zz >/dev/null || die "не удалось установить 7-Zip"
+command -v 7z >/dev/null || command -v 7zz >/dev/null || die "$(T "не удалось установить 7-Zip" "could not install 7-Zip")"
 command -v sfdisk >/dev/null || apt-get install -y -qq util-linux >/dev/null
-ok "Пакеты установлены"
+ok "$(T "Пакеты установлены" "Packages installed")"
 
 # ---------------------------------------------------------------- site files
 
-step "Файлы сайта"
+step "$(T "Файлы сайта" "Site files")"
 install -d "$SITE_DIR" "$SITE_DIR/admin"
-install -m 644 "$SRC"/web/{index.html,app.js,kmouse.js,kkeys.js} "$SITE_DIR/"
+install -m 644 "$SRC"/web/{index.html,app.js,i18n.js,kmouse.js,kkeys.js} "$SITE_DIR/"
 install -m 644 "$SRC/web/admin/index.html" "$SITE_DIR/admin/"
+# Default UI language of the page and the admin page (visitors can switch it).
+sed -i "s/data-default-lang=\"[a-z]*\"/data-default-lang=\"$UI_LANG\"/" "$SITE_DIR/index.html" "$SITE_DIR/admin/index.html"
 bash "$SRC/scripts/fetch-v86.sh" "$SITE_DIR" >/dev/null
 gzip -9 -k -f "$SITE_DIR/admin/index.html"
 install -d -o www-data -g www-data "$SITE_DIR/os" "$STATE"
@@ -237,12 +262,13 @@ ok "$SITE_DIR"
 
 # ---------------------------------------------------------------- updater & admin
 
-step "Обновления и админ-страница"
+step "$(T "Обновления и админ-страница" "Updates and the admin page")"
 install -m 755 "$SRC/server/kolibri-update" /usr/local/bin/kolibri-update
 install -D -m 644 "$SRC/server/kolibri-admin.py" /usr/local/lib/kolibri/kolibri-admin.py
 
 ENV_LINES="Environment=KOLIBRI_ROOT=$SITE_DIR
 Environment=KOLIBRI_LANG=$KOLIBRI_LANG
+Environment=KOLIBRI_UI_LANG=$UI_LANG
 Environment=KOLIBRI_ADMIN_PORT=$ADMIN_PORT"
 HARDEN="NoNewPrivileges=yes
 ProtectSystem=strict
@@ -300,11 +326,11 @@ if [ -n "${ADMIN_PASSWORD:-}" ] || [ ! -s $HTPASSWD ]; then
     printf '%s:%s\n' "$ADMIN_USER" "$(openssl passwd -apr1 "$ADMIN_PASSWORD")" > $HTPASSWD
     chown root:www-data $HTPASSWD; chmod 640 $HTPASSWD
     (umask 077; printf 'URL: %sadmin/\nlogin: %s\npassword: %s\n' "$URL" "$ADMIN_USER" "$ADMIN_PASSWORD" > $CREDS)
-    PASSWORD_NOTE="пароль: $ADMIN_PASSWORD (сохранён в $CREDS)"
+    PASSWORD_NOTE="$(T "пароль" "password"): $ADMIN_PASSWORD ($(T "сохранён в" "saved to") $CREDS)"
 else
-    PASSWORD_NOTE="пароль прежний (см. $CREDS)"
+    PASSWORD_NOTE="$(T "пароль прежний (см. $CREDS)" "password unchanged (see $CREDS)")"
 fi
-ok "kolibri-update, kolibri-admin, таймер"
+ok "kolibri-update, kolibri-admin, $(T "таймер" "timer")"
 
 # ---------------------------------------------------------------- nginx
 
@@ -354,11 +380,12 @@ if [ "$NGINX_MODE" = site ]; then
     if [ -z "$DOMAIN" ]; then
         # Without a domain the site must answer any Host: become the default server.
         DEFAULT=" default_server"
-        if [ -L /etc/nginx/sites-enabled/default ] && yesno "${REMOVE_DEFAULT:-нет}"; then
+        if [ -L /etc/nginx/sites-enabled/default ] && yesno "${REMOVE_DEFAULT:-no}"; then
             rm -f /etc/nginx/sites-enabled/default
         fi
         if grep -rqs 'default_server' /etc/nginx/sites-enabled/ --exclude=kolibrios; then
-            die "в nginx уже есть другой default_server; укажите домен или отключите тот сайт"
+            die "$(T "в nginx уже есть другой default_server; укажите домен или отключите тот сайт" \
+                     "nginx already has another default_server; give a domain or disable that site")"
         fi
     fi
     cat > /etc/nginx/sites-available/kolibrios <<EOF
@@ -381,32 +408,35 @@ else
         "$WEBROOT" "$LOCATIONS" > /etc/nginx/snippets/kolibrios.conf
 fi
 
-nginx -t 2>/tmp/kolibrios-nginx.log || { cat /tmp/kolibrios-nginx.log >&2; die "nginx -t не прошёл, конфигурация не применена"; }
+nginx -t 2>/tmp/kolibrios-nginx.log || { cat /tmp/kolibrios-nginx.log >&2; die "$(T "nginx -t не прошёл, конфигурация не применена" "nginx -t failed, the configuration was not applied")"; }
 if have_systemd; then systemctl enable -q nginx; systemctl reload nginx 2>/dev/null || systemctl restart nginx
 else nginx -s reload 2>/dev/null || nginx; fi
-ok "nginx настроен"
+ok "$(T "nginx настроен" "nginx configured")"
 
 if [ "$NGINX_MODE" = site ] && yesno "$HTTPS"; then
     step "HTTPS (Let's Encrypt)"
     le_args=(--nginx -d "$DOMAIN" --redirect --non-interactive --agree-tos)
     if [ -n "${LE_EMAIL:-}" ]; then le_args+=(-m "$LE_EMAIL"); else le_args+=(--register-unsafely-without-email); fi
     if certbot "${le_args[@]}"; then
-        ok "Сертификат получен, HTTP перенаправляется на HTTPS"
+        ok "$(T "Сертификат получен, HTTP перенаправляется на HTTPS" "Certificate obtained; HTTP redirects to HTTPS")"
     else
-        warn "Сертификат получить не удалось: проверьте, что $DOMAIN указывает на этот сервер"
-        warn "и порт 80 открыт. Сайт работает по HTTP; повторите: certbot --nginx -d $DOMAIN"
+        warn "$(T "Сертификат получить не удалось: проверьте, что $DOMAIN указывает на этот сервер" \
+                  "Could not get a certificate: check that $DOMAIN points to this server")"
+        warn "$(T "и порт 80 открыт. Сайт работает по HTTP; повторите: certbot --nginx -d $DOMAIN" \
+                  "and port 80 is open. The site works over HTTP; retry with: certbot --nginx -d $DOMAIN")"
         URL="http://$HOST$PREFIX"
     fi
 fi
 
 # ---------------------------------------------------------------- first build
 
-step "Сборка KolibriOS (первый раз скачивается ~50 МБ)"
-if runuser -u www-data -- env KOLIBRI_ROOT="$SITE_DIR" KOLIBRI_LANG="$KOLIBRI_LANG" KOLIBRI_STATE="$STATE" \
-        /usr/local/bin/kolibri-update; then
-    ok "Сборка установлена"
+step "$(T "Сборка KolibriOS (первый раз скачивается ~50 МБ)" "KolibriOS build (~50 MB download the first time)")"
+if runuser -u www-data -- env KOLIBRI_ROOT="$SITE_DIR" KOLIBRI_LANG="$KOLIBRI_LANG" KOLIBRI_UI_LANG="$UI_LANG" \
+        KOLIBRI_STATE="$STATE" /usr/local/bin/kolibri-update; then
+    ok "$(T "Сборка установлена" "Build installed")"
 else
-    warn "Скачать сборку не удалось; повторите позже: sudo systemctl start kolibri-update"
+    warn "$(T "Скачать сборку не удалось; повторите позже: sudo systemctl start kolibri-update" \
+              "Could not download a build; retry later: sudo systemctl start kolibri-update")"
 fi
 
 if have_systemd; then
@@ -414,24 +444,27 @@ if have_systemd; then
     systemctl enable -q --now kolibri-update.timer
     systemctl enable -q kolibri-admin.service
     systemctl restart kolibri-admin.service
-    ok "Автообновление и админка запущены"
+    ok "$(T "Автообновление и админка запущены" "Daily updates and the admin backend are running")"
 else
-    warn "systemd не найден: автообновление и админка не запущены."
-    warn "Запускайте вручную от www-data с переменными окружения:"
-    warn "  KOLIBRI_ROOT=$SITE_DIR KOLIBRI_LANG=$KOLIBRI_LANG kolibri-update"
-    warn "  KOLIBRI_ROOT=$SITE_DIR KOLIBRI_LANG=$KOLIBRI_LANG KOLIBRI_ADMIN_PORT=$ADMIN_PORT python3 /usr/local/lib/kolibri/kolibri-admin.py"
+    warn "$(T "systemd не найден: автообновление и админка не запущены." "systemd not found: daily updates and the admin backend are not running.")"
+    warn "$(T "Запускайте вручную от www-data с переменными окружения:" "Run them by hand as www-data with these variables:")"
+    ENVS="KOLIBRI_ROOT=$SITE_DIR KOLIBRI_LANG=$KOLIBRI_LANG KOLIBRI_UI_LANG=$UI_LANG"
+    warn "  $ENVS kolibri-update"
+    warn "  $ENVS KOLIBRI_ADMIN_PORT=$ADMIN_PORT python3 /usr/local/lib/kolibri/kolibri-admin.py"
 fi
 
 # ---------------------------------------------------------------- done
 
-step "Готово"
-say "  Сайт:           $URL"
-say "  Админ-страница: ${URL%/}/admin/  логин $ADMIN_USER, $PASSWORD_NOTE"
+step "$(T "Готово" "Done")"
+say "  $(T "Сайт:          " "Site:          ") $URL"
+say "  $(T "Админ-страница:" "Admin page:    ") ${URL%/}/admin/  $(T "логин" "login") $ADMIN_USER, $PASSWORD_NOTE"
 if [ "$NGINX_MODE" = snippet ]; then
     say
-    say "  Осталось подключить конфигурацию: добавьте в ваш server { } (где root $WEBROOT) строку"
+    say "  $(T "Осталось подключить конфигурацию: добавьте в ваш server { } (где root $WEBROOT) строку" \
+               "One step left: add this line to your server { } block (the one with root $WEBROOT):")"
     say "      include /etc/nginx/snippets/kolibrios.conf;"
-    say "  и выполните: sudo nginx -t && sudo systemctl reload nginx"
+    say "  $(T "и выполните:" "then run:") sudo nginx -t && sudo systemctl reload nginx"
 fi
 say
-say "  Обновить установку: запустите install.sh снова. Удалить: install.sh --uninstall"
+say "  $(T "Обновить установку: запустите install.sh снова. Удалить: install.sh --uninstall" \
+           "To update: run install.sh again. To remove: install.sh --uninstall")"

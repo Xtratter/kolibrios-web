@@ -6,11 +6,10 @@ A website that drops every visitor into [KolibriOS](https://kolibrios.org) runni
 [v86](https://github.com/copy/v86) emulator right in their browser. The server only serves
 static files, so its load barely depends on the number of visitors.
 
-> The page interface, the admin page and the installer's questions are in Russian for now.
-> KolibriOS itself can be installed in English (see the installer's build language option).
-
 ## Features
 
+- **Russian and English interface.** The installer asks which language to use as the
+  default; visitors can switch it in the menu.
 - **Phone-friendly.** The screen fits the window; fullscreen mode rotates to landscape.
 - **Two touch modes.**
   - *Direct:* tap clicks exactly at that point, long press is a right click, sliding a
@@ -36,6 +35,7 @@ static files, so its load barely depends on the number of visitors.
 | `web/index.html`, `web/app.js` | The page: emulator startup, screen, touch input, menu, saved states |
 | `web/kmouse.js` | Exact (absolute) cursor positioning on top of a relative PS/2 mouse |
 | `web/kkeys.js` | Text input via scancodes with automatic keyboard layout switching |
+| `web/i18n.js` | Russian and English UI strings for the page and the admin page |
 | `web/admin/` | Update admin page |
 | `install.sh` | Interactive installer for the whole site on Debian/Ubuntu |
 | `server/kolibri-update` | Downloads a build, checks SHA-256, builds the images, publishes them |
@@ -78,6 +78,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/Xtratter/kolibrios-
 
 The installer asks questions (each has a default; Enter accepts it):
 
+- **Language** of the installer and the default language of the site (Russian or English).
 - **Domain.** If left empty, the site opens at the server's IP address over HTTP.
 - **How to connect to nginx.**
   - *Separate site:* the installer creates the `server { }` block itself and can obtain a
@@ -102,7 +103,7 @@ At the end it prints the addresses and the password; the password is also saved 
 - **Update an installation** (new project version, different settings): run `install.sh`
   again. Previous answers become the defaults; downloaded builds and the password are kept.
 - **Without questions:** `sudo ./install.sh --yes`. Answers can be given as environment
-  variables: `DOMAIN`, `NGINX_MODE` (`site`/`snippet`), `PREFIX`, `WEBROOT`, `HTTPS`,
+  variables: `UI_LANG` (`ru`/`en`), `DOMAIN`, `NGINX_MODE` (`site`/`snippet`), `PREFIX`, `WEBROOT`, `HTTPS`,
   `LE_EMAIL`, `KOLIBRI_LANG`, `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_PORT`.
 - **Uninstall:** `sudo ./install.sh --uninstall`. The directory with downloaded builds is
   removed only after a separate confirmation.
@@ -131,8 +132,10 @@ sudo systemctl enable --now kolibri-update.timer kolibri-admin.service
 
 Then add the blocks from `server/nginx/kolibri.conf` to your nginx HTTPS server, create the
 password file (the command is in a comment in that file) and reload nginx. The directory,
-build language and admin port are set with the `KOLIBRI_ROOT`, `KOLIBRI_LANG` and
-`KOLIBRI_ADMIN_PORT` variables.
+build language, admin port and message language are set with the `KOLIBRI_ROOT`,
+`KOLIBRI_LANG`, `KOLIBRI_ADMIN_PORT` and `KOLIBRI_UI_LANG` (`ru`/`en`) variables; the
+page's default language is `data-default-lang` on `<html>` in `index.html` and
+`admin/index.html`.
 
 </details>
 

@@ -17,7 +17,8 @@ const setStatus = (text, sticky) => {
   clearTimeout(setStatus.t);
   if (!sticky && text) setStatus.t = setTimeout(() => (status.textContent = ""), 4000);
 };
-const mb = n => (n / 1048576).toFixed(1) + " МБ";
+const t = I18N.t;
+const mb = n => (n / 1048576).toFixed(1) + " " + t("mb");
 
 // ---------------------------------------------------------------- config
 
@@ -31,7 +32,7 @@ async function loadConfig() {
   let build = latest;
   if (pending && pending.build && pending.build !== latest.build) {
     build = await fetch(`os/${encodeURIComponent(pending.build)}/meta.json`).then(r => (r.ok ? r.json() : null)).catch(() => null);
-    if (!build) { pending = null; build = latest; setStatus("Сборка сохранения больше недоступна", true); }
+    if (!build) { pending = null; build = latest; setStatus(t("build.gone"), true); }
   }
   const media = pending ? !!pending.media : store.get("kolibri-media", false);
   return { build, latest, media };
@@ -43,13 +44,13 @@ let emulator, cfg, keys, ptr;
 
 async function boot() {
   try { cfg = await loadConfig(); }
-  catch (e) { setStatus("Не удалось получить описание сборки", true); throw e; }
+  catch (e) { setStatus(t("build.fail"), true); throw e; }
 
   $("version").textContent = cfg.build.build.replace(/-[0-9a-f]{7}$/, "");
-  $("version").title = `KolibriOS ${cfg.build.build} от ${cfg.build.date}`;
+  $("version").title = t("build.title", cfg.build);
   $("opt-media").checked = cfg.media;
   $("media-size").textContent = mb(cfg.build.media_size).replace(".0", "");
-  $("build-info").textContent = `${cfg.build.build}, сборка от ${cfg.build.date}`;
+  $("build-info").textContent = t("build.info", cfg.build);
 
   emulator = new V86({
     wasm_path: "v86.wasm",
@@ -67,13 +68,13 @@ async function boot() {
 
   let ready = false;
   emulator.add_listener("download-progress", e => {
-    if (!ready && e.lengthComputable) setStatus("Загрузка " + Math.min(100, Math.round(e.loaded / e.total * 100)) + "%", true);
-    else if (ready && cfg.media) setStatus("Чтение медиа-диска…");
+    if (!ready && e.lengthComputable) setStatus(t("dl.progress", { p: Math.min(100, Math.round(e.loaded / e.total * 100)) }), true);
+    else if (ready && cfg.media) setStatus(t("media.reading"));
   });
-  emulator.add_listener("download-error", () => setStatus("Ошибка загрузки файлов", true));
+  emulator.add_listener("download-error", () => setStatus(t("dl.error"), true));
   emulator.add_listener("emulator-ready", async () => {
     ready = true;
-    setStatus(cfg.media ? "Медиа-пакет подключён" : "");
+    setStatus(cfg.media ? t("media.on") : "");
     if (pending && pending.restore) await restorePending();
   });
   emulator.add_listener("screen-set-size", () => requestAnimationFrame(fit));
@@ -426,7 +427,7 @@ $("btn-full").onclick = async () => {
     if (document.fullscreenElement) return await document.exitFullscreen();
     await document.documentElement.requestFullscreen({ navigationUI: "hide" });
     if (isTouch) await screen.orientation.lock("landscape").catch(() => {});
-  } catch { setStatus("Полноэкранный режим недоступен"); }
+  } catch { setStatus(t("full.na")); }
 };
 document.addEventListener("fullscreenchange", () => requestAnimationFrame(fit));
 
@@ -438,6 +439,14 @@ $("opt-media").onchange = e => {
   $("media-note").hidden = false;
 };
 $("act-apply").onclick = () => location.reload();
+
+for (const [code, name] of Object.entries(I18N.NAMES)) {
+  const b = document.createElement("button");
+  b.textContent = name;
+  b.setAttribute("aria-pressed", code === I18N.lang);
+  b.onclick = () => code !== I18N.lang && I18N.set(code);
+  $("lang-list").append(b);
+}
 
 // ---------------------------------------------------------------- saved states
 
@@ -470,7 +479,7 @@ async function run(label, fn) {
   menu.open && menu.close();
   setStatus(label + "…", true);
   try { setStatus(await fn()); }
-  catch (e) { console.error(e); setStatus("Ошибка: " + (e.message || e), true); }
+  catch (e) { console.error(e); setStatus(t("error", { msg: e.message || e }), true); }
 }
 
 async function snapshot() {
@@ -483,34 +492,34 @@ async function applyRecord(rec) {
     await idb("readwrite", s => s.put(rec, PENDING_KEY));
     sessionStorage.setItem("kolibri-pending", JSON.stringify({ build, media, restore: true }));
     location.reload();
-    return "Перезапуск с нужной сборкой…";
+    return t("restarting");
   }
   await emulator.restore_state(await gunzip(rec.data));
   ptr.invalidate(); keys.resetLayout();
   emulator.run();
-  return "Восстановлено от " + new Date(rec.time).toLocaleString("ru-RU");
+  return t("restored", { time: new Date(rec.time).toLocaleString(I18N.locale) });
 }
 
 async function restorePending() {
-  await run("Восстановление", async () => {
+  await run(t("restoring"), async () => {
     const rec = await idb("readonly", s => s.get(PENDING_KEY));
-    if (!rec) return "Нечего восстанавливать";
+    if (!rec) return t("nothing");
     await idb("readwrite", s => s.delete(PENDING_KEY));
     return applyRecord(rec);
   });
 }
 
-$("act-save").onclick = () => run("Сохранение", async () => {
+$("act-save").onclick = () => run(t("saving"), async () => {
   const rec = await snapshot();
   await idb("readwrite", s => s.put(rec, STATE_KEY));
-  return "Сохранено (" + mb(rec.data.byteLength) + ")";
+  return t("saved", { size: mb(rec.data.byteLength) });
 });
-$("act-load").onclick = () => run("Восстановление", async () => {
+$("act-load").onclick = () => run(t("restoring"), async () => {
   const rec = await idb("readonly", s => s.get(STATE_KEY));
-  if (!rec) return "Нет сохранения в этом браузере";
+  if (!rec) return t("no.save");
   return applyRecord(rec);
 });
-$("act-export").onclick = () => run("Подготовка файла", async () => {
+$("act-export").onclick = () => run(t("preparing"), async () => {
   const rec = await snapshot();
   const head = new TextEncoder().encode(FILE_MAGIC + JSON.stringify({ time: rec.time, build: rec.build, media: rec.media }) + "\n");
   const file = await gzip(await new Blob([head, await gunzip(rec.data)]).arrayBuffer());
@@ -519,7 +528,7 @@ $("act-export").onclick = () => run("Подготовка файла", async () 
   a.download = "kolibri-state-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".bin.gz";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  return "Файл скачан (" + mb(file.byteLength) + ")";
+  return t("downloaded", { size: mb(file.byteLength) });
 });
 const fileIn = $("file-in");
 $("act-import").onclick = () => fileIn.click();
@@ -527,7 +536,7 @@ fileIn.onchange = () => {
   const f = fileIn.files[0];
   fileIn.value = "";
   if (!f) return;
-  run("Загрузка файла", async () => {
+  run(t("loading.file"), async () => {
     const raw = new Uint8Array(await gunzip(await f.arrayBuffer()));
     const magic = new TextEncoder().encode(FILE_MAGIC);
     let rec = { time: f.lastModified, build: cfg.build.build, media: cfg.media };

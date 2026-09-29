@@ -16,7 +16,7 @@ for f in seabios.bin vgabios.bin; do
 done
 
 cd "$DEST"
-for f in libv86.js v86.wasm seabios.bin vgabios.bin index.html app.js kmouse.js kkeys.js; do
+for f in libv86.js v86.wasm seabios.bin vgabios.bin index.html app.js i18n.js kmouse.js kkeys.js; do
     gzip -9 -k -f "$f"
 done
 echo "v86 $V86_VERSION -> $DEST"

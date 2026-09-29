@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-default-lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="theme-color" content="#1b1b1b">
-<title>KolibriOS в браузере</title>
+<title data-i18n="title">KolibriOS в браузере</title>
 <style>
   :root { color-scheme: dark; --bg: #111; --bar: #1b1b1b; --line: #333; --btn: #2a2a2a; --btn-hover: #363636; --text: #ddd; --muted: #999; --accent: #4a9eff; }
   * { box-sizing: border-box; }
@@ -79,22 +79,22 @@
 <body>
 <header>
   <span class="brand">KolibriOS</span><span id="version"></span>
-  <span id="status">Загрузка…</span>
-  <button id="btn-pad" aria-pressed="false" title="Режим тачпада">
+  <span id="status" data-i18n="loading">Загрузка…</span>
+  <button id="btn-pad" aria-pressed="false" data-i18n-title="pad.title">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 14h18M12 14v6"/></svg>
-    <span class="label">Тачпад</span>
+    <span class="label" data-i18n="pad">Тачпад</span>
   </button>
-  <button id="btn-kbd" aria-pressed="false" title="Клавиатура">
+  <button id="btn-kbd" aria-pressed="false" data-i18n-title="kbd">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
-    <span class="label">Клавиатура</span>
+    <span class="label" data-i18n="kbd">Клавиатура</span>
   </button>
-  <button id="btn-full" title="Во весь экран">
+  <button id="btn-full" data-i18n-title="full.title">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
-    <span class="label">Экран</span>
+    <span class="label" data-i18n="full">Экран</span>
   </button>
-  <button id="btn-menu" title="Меню">
+  <button id="btn-menu" data-i18n-title="menu">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    <span class="label">Меню</span>
+    <span class="label" data-i18n="menu">Меню</span>
   </button>
 </header>
 
@@ -106,9 +106,9 @@
 </div>
 
 <div id="mouse-bar">
-  <button data-btn="0">ЛКМ</button>
-  <button id="btn-dbl" title="Двойной щелчок">2×</button>
-  <button data-btn="2">ПКМ</button>
+  <button data-btn="0" data-i18n="lmb">ЛКМ</button>
+  <button id="btn-dbl" data-i18n-title="dbl.title">2×</button>
+  <button data-btn="2" data-i18n="rmb">ПКМ</button>
 </div>
 
 <div id="keys">
@@ -137,67 +137,52 @@
   <button data-key="F7">F7</button><button data-key="F8">F8</button><button data-key="F9">F9</button>
   <button data-key="F10">F10</button><button data-key="F11">F11</button><button data-key="F12">F12</button>
 </div>
-<textarea id="kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Ввод с клавиатуры"></textarea>
+<textarea id="kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-i18n-aria="kbd.aria"></textarea>
 
-<footer>
-  Мышь работает сразу, без захвата. Эмуляция идёт в вашем браузере
-  (<a href="https://github.com/copy/v86">v86</a>); состояние можно сохранить через меню.
-</footer>
+<footer data-i18n-html="footer"></footer>
 
 <dialog id="menu">
-  <div class="menu-head"><b>Меню</b><button id="menu-close" aria-label="Закрыть">✕</button></div>
+  <div class="menu-head"><b data-i18n="menu">Меню</b><button id="menu-close" data-i18n-aria="close">✕</button></div>
   <div class="menu-body">
-    <h3>Система</h3>
+    <h3 data-i18n="h.system"></h3>
     <div class="grid">
       <button id="act-cad">Ctrl+Alt+Del</button>
-      <button id="act-reset">Перезагрузка</button>
+      <button id="act-reset" data-i18n="reset"></button>
     </div>
 
-    <h3>Состояние</h3>
+    <h3 data-i18n="h.state"></h3>
     <div class="grid">
-      <button id="act-save">Сохранить</button>
-      <button id="act-load">Восстановить</button>
-      <button id="act-export">Скачать файл</button>
-      <button id="act-import">Из файла…</button>
+      <button id="act-save" data-i18n="save"></button>
+      <button id="act-load" data-i18n="load"></button>
+      <button id="act-export" data-i18n="export"></button>
+      <button id="act-import" data-i18n="import"></button>
     </div>
     <input type="file" id="file-in" accept=".gz,.bin,application/gzip" hidden>
-    <p class="hint">Сохранение хранится в этом браузере; файл можно перенести на другое устройство.</p>
+    <p class="hint" data-i18n="state.hint"></p>
 
-    <h3>Медиа-пакет</h3>
+    <h3 data-i18n="h.media"></h3>
     <label class="toggle">
       <input type="checkbox" id="opt-media">
-      <span>Подключить диск с дополнительными программами: плееры (fplay, minimp3), просмотр картинок и PDF,
-        игры, 3D, эмуляторы, средства разработки. Всего <span id="media-size">…</span>, скачиваются только
-        открываемые файлы. Папка <code>/kolibrios</code>.</span>
+      <span data-i18n-html="media.desc"></span>
     </label>
     <div class="note" id="media-note" hidden>
-      <span>Изменение применится после перезапуска.</span>
-      <button id="act-apply">Перезапустить</button>
+      <span data-i18n="media.note"></span>
+      <button id="act-apply" data-i18n="apply"></button>
     </div>
 
-    <h3>Управление с телефона</h3>
-    <p class="hint" style="margin:0 0 6px">Кнопка «Тачпад» в шапке переключает режим.</p>
-    <ul class="help">
-      <li><b>Тачпад:</b> ведите пальцем — курсор движется (быстрее ведёте — дальше уходит),
-        касание — щелчок, два пальца — прокрутка, касание двумя пальцами — правая кнопка.
-        Работает по всей области, включая пустые поля над и под экраном системы.
-        Кнопки <b>ЛКМ</b>/<b>ПКМ</b> внизу можно удерживать и одновременно вести пальцем по экрану — так перетаскиваются окна</li>
-      <li><b>Прямое касание</b> (тачпад выключен):</li>
-      <li><b>Касание</b> — щелчок в этой точке, <b>двойное касание</b> — двойной щелчок</li>
-      <li><b>Долгое нажатие</b> или <b>касание двумя пальцами</b> — правая кнопка</li>
-      <li><b>Провести пальцем</b> — перетаскивание (окна, выделение)</li>
-      <li><b>Два пальца вверх/вниз</b> — прокрутка</li>
-      <li><b>Клавиатура</b> в шапке открывает экранную клавиатуру и панель Esc/Ctrl/стрелок;
-        русские и латинские буквы вводятся без переключения раскладки</li>
-      <li>В портретной ориентации экран мелкий — удобнее повернуть телефон или нажать «Экран»</li>
-    </ul>
+    <h3 data-i18n="h.phone"></h3>
+    <p class="hint" style="margin:0 0 6px" data-i18n="phone.hint"></p>
+    <ul class="help" data-i18n-html="phone.help"></ul>
 
-    <h3>Версия</h3>
-    <p class="hint" style="margin-top:0">KolibriOS <span id="build-info">…</span>. Новые сборки
-      с kolibrios.org устанавливаются на сервере автоматически.</p>
+    <h3 data-i18n="h.lang"></h3>
+    <div class="grid" id="lang-list"></div>
+
+    <h3 data-i18n="h.version"></h3>
+    <p class="hint" style="margin-top:0" data-i18n-html="version.text"></p>
   </div>
 </dialog>
 
+<script src="i18n.js"></script>
 <script src="libv86.js"></script>
 <script src="kmouse.js"></script>
 <script src="kkeys.js"></script>
