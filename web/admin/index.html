@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KolibriOS: обновления</title>
+<style>
+  :root { color-scheme: dark; --bg: #111; --panel: #1b1b1b; --line: #333; --text: #ddd; --muted: #999; --accent: #4a9eff; --ok: #5c5; --warn: #e9b949; --bad: #e66; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 4px 0 16px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  button { background: #2a2a2a; color: var(--text); border: 1px solid #444; border-radius: 6px; padding: 8px 14px; font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+  pre { background: #0b0b0b; border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 0; max-height: 320px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>KolibriOS: обновления</h1>
+
+  <section>
+    <h2>Состояние</h2>
+    <dl>
+      <dt>Текущая сборка</dt><dd id="cur">—</dd>
+      <dt>Последняя на kolibrios.org</dt><dd id="up">—</dd>
+      <dt>Процесс</dt><dd id="run">—</dd>
+    </dl>
+    <p class="row" style="margin:14px 0 0">
+      <button class="primary" id="btn-update">Проверить и обновить</button>
+      <button id="btn-force" title="Скачать и собрать последнюю сборку заново">Пересобрать</button>
+      <span id="msg"></span>
+    </p>
+    <p style="color:var(--muted);margin:10px 0 0;font-size:13px">
+      Автоматическая проверка — ежедневно около 04:30. Хранятся три последние сборки; на любую можно вернуться.
+      Посетители получают новую сборку при следующем открытии страницы.
+    </p>
+  </section>
+
+  <section>
+    <h2>Установленные сборки</h2>
+    <table><tbody id="builds"></tbody></table>
+  </section>
+
+  <section>
+    <h2>Журнал</h2>
+    <pre id="log"></pre>
+  </section>
+
+  <p><a href="../">← К эмулятору</a></p>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  const api = (path, body) => fetch("api/" + path, body === undefined ? {} : {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Requested-With": "kolibri-admin" },
+    body: JSON.stringify(body),
+  }).then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }));
+  const esc = v => String(v ?? "").replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
+  const mb = n => (n / 1048576).toFixed(0) + " МБ";
+  let timer = 0;
+
+  function render(s) {
+    const cur = s.current;
+    $("cur").textContent = cur ? `${cur.build} (от ${cur.date})` : "не установлена";
+    const up = s.upstream;
+    $("up").innerHTML = "";
+    if (up.error) $("up").innerHTML = `<span class="bad">не удалось проверить</span>`;
+    else if (up.build) {
+      const fresh = cur && cur.build === up.build;
+      $("up").innerHTML = `${esc(up.build)} <span class="${fresh ? "ok" : "warn"}">${fresh ? "— установлена" : "— доступно обновление"}</span>`;
+    }
+    $("run").innerHTML = s.running ? `<span class="warn">идёт обновление…</span>` : "ожидание";
+    $("btn-update").disabled = $("btn-force").disabled = s.running;
+
+    $("builds").innerHTML = "";
+    for (const b of s.builds) {
+      const tr = document.createElement("tr");
+      const isCur = cur && cur.build === b.build;
+      const note = b.media_checksum === "mismatch"
+        ? `<br><span class="warn" style="font-size:13px">SHA-256 ISO не совпал с опубликованным (архив цел)</span>` : "";
+      tr.innerHTML = `<td>${esc(b.build)}<br><span style="color:var(--muted);font-size:13px">от ${esc(b.date)}, медиа ${mb(b.media_size)}</span>${note}</td><td style="text-align:right"></td>`;
+      const cell = tr.lastChild;
+      if (isCur) cell.innerHTML = `<span class="ok">текущая</span>`;
+      else {
+        const btn = document.createElement("button");
+        btn.textContent = "Сделать текущей";
+        btn.onclick = async () => {
+          btn.disabled = true;
+          const r = await api("activate", { build: b.build });
+          $("msg").textContent = r.data.output || r.data.error || "";
+          refresh();
+        };
+        cell.append(btn);
+      }
+      $("builds").append(tr);
+    }
+    const log = $("log");
+    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+    log.textContent = s.log.join("");
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  }
+
+  async function refresh() {
+    clearTimeout(timer);
+    try {
+      const r = await api("status");
+      render(r.data);
+      timer = setTimeout(refresh, r.data.running ? 2000 : 30000);
+    } catch (e) {
+      $("msg").textContent = "Нет связи с сервером";
+      timer = setTimeout(refresh, 10000);
+    }
+  }
+
+  async function start(force) {
+    $("btn-update").disabled = $("btn-force").disabled = true;
+    const r = await api("update", { force });
+    $("msg").textContent = r.ok ? "Запущено" : (r.data.error || "Ошибка");
+    setTimeout(refresh, 800);
+  }
+  $("btn-update").onclick = () => start(false);
+  $("btn-force").onclick = () => start(true);
+  refresh();
+</script>
+</body>
+</html>

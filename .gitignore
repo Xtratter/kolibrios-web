@@ -1,0 +1,11 @@
+# Downloaded by scripts/fetch-v86.sh
+web/libv86.js
+web/v86.wasm
+web/*.bin
+web/v86-LICENSE.txt
+web/**/*.gz
+# Built by server/kolibri-update
+web/os/
+# Test output
+tests/shots/
+__pycache__/

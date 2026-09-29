@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="#1b1b1b">
+<title>KolibriOS в браузере</title>
+<style>
+  :root { color-scheme: dark; --bg: #111; --bar: #1b1b1b; --line: #333; --btn: #2a2a2a; --btn-hover: #363636; --text: #ddd; --muted: #999; --accent: #4a9eff; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif;
+         display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+  button { background: var(--btn); color: var(--text); border: 1px solid #444; border-radius: 6px;
+           padding: 6px 10px; font: inherit; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button:hover { background: var(--btn-hover); }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; padding-top: max(6px, env(safe-area-inset-top));
+           background: var(--bar); border-bottom: 1px solid var(--line); flex: none; }
+  header .brand { font-weight: 600; margin-right: 2px; white-space: nowrap; }
+  #version { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #status { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; }
+  header svg { width: 18px; height: 18px; flex: none; }
+  @media (max-width: 560px) { header .label { display: none; } #version { display: none; } }
+
+  #stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; }
+  #screen_container { width: var(--cw, 640px); height: var(--ch, 400px); background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #screen_container canvas { display: block; width: var(--cw, 640px) !important; height: var(--ch, 400px) !important;
+                             transform: none !important; image-rendering: auto; }
+  #screen_container.crisp canvas { image-rendering: pixelated; }
+  #screen_container > div { display: none !important; }
+
+  #keys { display: none; flex: none; gap: 4px; padding: 5px 6px; padding-bottom: max(5px, env(safe-area-inset-bottom));
+          background: var(--bar); border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  #keys::-webkit-scrollbar { display: none; }
+  body.kbd-on #keys { display: flex; }
+  #keys button { flex: none; min-width: 42px; padding: 8px 8px; font-size: 13px; }
+  #keys .sep { flex: none; width: 1px; background: var(--line); margin: 2px 2px; }
+
+  #btn-pad { display: none; }
+  body.touch #btn-pad { display: inline-flex; }
+  #mouse-bar { display: none; flex: none; gap: 6px; padding: 6px; background: var(--bar); border-top: 1px solid var(--line); }
+  body.pad-on #mouse-bar { display: flex; }
+  body.pad-on:not(.kbd-on) #mouse-bar { padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  #mouse-bar button { flex: 2; height: 52px; font-size: 15px; user-select: none; -webkit-user-select: none; touch-action: none; }
+  #mouse-bar #btn-dbl { flex: 1; }
+  #mouse-bar button.down { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  #kbd { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0;
+         font-size: 16px; resize: none; caret-color: transparent; }
+
+  footer { flex: none; color: #777; font-size: 12px; padding: 5px 12px; text-align: center; }
+  body.touch footer, body.kbd-on footer { display: none; }
+  @media (max-height: 520px) { footer { display: none; } }
+
+  dialog { background: var(--bar); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 0;
+           width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); }
+  dialog::backdrop { background: rgb(0 0 0 / .55); }
+  .menu-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .menu-head b { font-size: 16px; }
+  .menu-body { padding: 4px 16px 14px; overflow-y: auto; }
+  .menu-body h3 { font-size: 13px; color: var(--muted); font-weight: 500; margin: 14px 0 8px; text-transform: uppercase; letter-spacing: .04em; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid button { padding: 9px 10px; }
+  label.toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  label.toggle input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--accent); flex: none; }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  .note { background: #2a2410; border: 1px solid #5a4a1a; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 13px;
+          display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  ul.help { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+  ul.help b { color: var(--text); font-weight: 500; }
+  a { color: #8ab; }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">KolibriOS</span><span id="version"></span>
+  <span id="status">Загрузка…</span>
+  <button id="btn-pad" aria-pressed="false" title="Режим тачпада">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 14h18M12 14v6"/></svg>
+    <span class="label">Тачпад</span>
+  </button>
+  <button id="btn-kbd" aria-pressed="false" title="Клавиатура">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+    <span class="label">Клавиатура</span>
+  </button>
+  <button id="btn-full" title="Во весь экран">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    <span class="label">Экран</span>
+  </button>
+  <button id="btn-menu" title="Меню">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    <span class="label">Меню</span>
+  </button>
+</header>
+
+<div id="stage">
+  <div id="screen_container">
+    <div></div>
+    <canvas></canvas>
+  </div>
+</div>
+
+<div id="mouse-bar">
+  <button data-btn="0">ЛКМ</button>
+  <button id="btn-dbl" title="Двойной щелчок">2×</button>
+  <button data-btn="2">ПКМ</button>
+</div>
+
+<div id="keys">
+  <button data-key="Esc">Esc</button>
+  <button data-key="Tab">Tab</button>
+  <button data-mod="Ctrl" aria-pressed="false">Ctrl</button>
+  <button data-mod="Alt" aria-pressed="false">Alt</button>
+  <button data-mod="Shift" aria-pressed="false">Shift</button>
+  <span class="sep"></span>
+  <button data-key="Left">←</button>
+  <button data-key="Up">↑</button>
+  <button data-key="Down">↓</button>
+  <button data-key="Right">→</button>
+  <span class="sep"></span>
+  <button data-key="Enter">Enter</button>
+  <button data-key="Backspace">⌫</button>
+  <button data-key="Del">Del</button>
+  <button data-key="Home">Home</button>
+  <button data-key="End">End</button>
+  <button data-key="PgUp">PgUp</button>
+  <button data-key="PgDn">PgDn</button>
+  <button data-key="Win">Win</button>
+  <span class="sep"></span>
+  <button data-key="F1">F1</button><button data-key="F2">F2</button><button data-key="F3">F3</button>
+  <button data-key="F4">F4</button><button data-key="F5">F5</button><button data-key="F6">F6</button>
+  <button data-key="F7">F7</button><button data-key="F8">F8</button><button data-key="F9">F9</button>
+  <button data-key="F10">F10</button><button data-key="F11">F11</button><button data-key="F12">F12</button>
+</div>
+<textarea id="kbd" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Ввод с клавиатуры"></textarea>
+
+<footer>
+  Мышь работает сразу, без захвата. Эмуляция идёт в вашем браузере
+  (<a href="https://github.com/copy/v86">v86</a>); состояние можно сохранить через меню.
+</footer>
+
+<dialog id="menu">
+  <div class="menu-head"><b>Меню</b><button id="menu-close" aria-label="Закрыть">✕</button></div>
+  <div class="menu-body">
+    <h3>Система</h3>
+    <div class="grid">
+      <button id="act-cad">Ctrl+Alt+Del</button>
+      <button id="act-reset">Перезагрузка</button>
+    </div>
+
+    <h3>Состояние</h3>
+    <div class="grid">
+      <button id="act-save">Сохранить</button>
+      <button id="act-load">Восстановить</button>
+      <button id="act-export">Скачать файл</button>
+      <button id="act-import">Из файла…</button>
+    </div>
+    <input type="file" id="file-in" accept=".gz,.bin,application/gzip" hidden>
+    <p class="hint">Сохранение хранится в этом браузере; файл можно перенести на другое устройство.</p>
+
+    <h3>Медиа-пакет</h3>
+    <label class="toggle">
+      <input type="checkbox" id="opt-media">
+      <span>Подключить диск с дополнительными программами: плееры (fplay, minimp3), просмотр картинок и PDF,
+        игры, 3D, эмуляторы, средства разработки. Всего <span id="media-size">…</span>, скачиваются только
+        открываемые файлы. Папка <code>/kolibrios</code>.</span>
+    </label>
+    <div class="note" id="media-note" hidden>
+      <span>Изменение применится после перезапуска.</span>
+      <button id="act-apply">Перезапустить</button>
+    </div>
+
+    <h3>Управление с телефона</h3>
+    <p class="hint" style="margin:0 0 6px">Кнопка «Тачпад» в шапке переключает режим.</p>
+    <ul class="help">
+      <li><b>Тачпад:</b> ведите пальцем — курсор движется (быстрее ведёте — дальше уходит),
+        касание — щелчок, два пальца — прокрутка, касание двумя пальцами — правая кнопка.
+        Кнопки <b>ЛКМ</b>/<b>ПКМ</b> внизу можно удерживать и одновременно вести пальцем по экрану — так перетаскиваются окна</li>
+      <li><b>Прямое касание</b> (тачпад выключен):</li>
+      <li><b>Касание</b> — щелчок в этой точке, <b>двойное касание</b> — двойной щелчок</li>
+      <li><b>Долгое нажатие</b> или <b>касание двумя пальцами</b> — правая кнопка</li>
+      <li><b>Провести пальцем</b> — перетаскивание (окна, выделение)</li>
+      <li><b>Два пальца вверх/вниз</b> — прокрутка</li>
+      <li><b>Клавиатура</b> в шапке открывает экранную клавиатуру и панель Esc/Ctrl/стрелок;
+        русские и латинские буквы вводятся без переключения раскладки</li>
+      <li>В портретной ориентации экран мелкий — удобнее повернуть телефон или нажать «Экран»</li>
+    </ul>
+
+    <h3>Версия</h3>
+    <p class="hint" style="margin-top:0">KolibriOS <span id="build-info">…</span>. Новые сборки
+      с kolibrios.org устанавливаются на сервере автоматически.</p>
+  </div>
+</dialog>
+
+<script src="libv86.js"></script>
+<script src="kmouse.js"></script>
+<script src="kkeys.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

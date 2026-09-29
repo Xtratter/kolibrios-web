@@ -1,0 +1,147 @@
+#!/bin/bash
+# Fetches the latest KolibriOS build and publishes it for the browser emulator.
+#
+#   kolibri-update             install the latest build if it is not current yet
+#   kolibri-update --force     rebuild and reinstall the latest build
+#   kolibri-update --activate BUILD   make an already installed build current
+#
+# Every build lives in $ROOT/<build>/ (kolibri.img, its .gz, media.img with the
+# /kolibrios folder of the ISO on a FAT32 disk, meta.json); $ROOT/current.json
+# tells the page which one to load.
+set -euo pipefail
+
+ROOT=${KOLIBRI_ROOT:-/var/www/html/kolibri}/os
+BASE=https://builds.kolibrios.org/ru_RU
+STATE=${KOLIBRI_STATE:-/var/lib/kolibri-update}
+LOG=$STATE/update.log
+KEEP=3
+
+export MTOOLS_SKIP_CHECK=1 LC_ALL=C.UTF-8
+mkdir -p "$ROOT" "$STATE"
+
+exec 9>"$STATE/lock"
+if ! flock -n 9; then
+    echo "Обновление уже выполняется" >&2
+    exit 75
+fi
+exec > >(while IFS= read -r line; do printf '%s %s\n' "$(date '+%F %T')" "$line"; done | tee -a "$LOG") 2>&1
+logger_pid=$!
+work=
+finish() {
+    [ -n "$work" ] && rm -rf "$work"
+    exec 1>&- 2>&-
+    wait "$logger_pid" 2>/dev/null || true
+}
+trap finish EXIT
+
+activate() {
+    local build=$1
+    [ -f "$ROOT/$build/meta.json" ] || { echo "Сборка $build не установлена"; return 1; }
+    cp "$ROOT/$build/meta.json" "$ROOT/.current.json.tmp"
+    mv "$ROOT/.current.json.tmp" "$ROOT/current.json"
+    echo "Текущая сборка: $build"
+}
+
+current_build() {
+    python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["build"])' "$ROOT/current.json" 2>/dev/null || true
+}
+
+if [ "${1:-}" = "--activate" ]; then
+    activate "${2:?укажите сборку}"
+    exit
+fi
+force=0
+[ "${1:-}" = "--force" ] && force=1
+
+echo "Проверка обновлений на $BASE"
+sums=$(curl -fsS --retry 3 --max-time 60 "$BASE/sha256sums.txt")
+img_name=$(awk '$2 ~ /^kolibrios-.*-img\.7z$/ {print $2}' <<<"$sums" | tail -1)
+iso_name=$(awk '$2 ~ /^kolibrios-.*-iso\.7z$/ {print $2}' <<<"$sums" | tail -1)
+[ -n "$img_name" ] && [ -n "$iso_name" ] || { echo "Не удалось найти сборки в sha256sums.txt"; exit 1; }
+build=${img_name#kolibrios-}
+build=${build%-img.7z}
+echo "Последняя сборка: $build"
+
+if [ -f "$ROOT/$build/meta.json" ] && [ $force = 0 ]; then
+    if [ "$(current_build)" = "$build" ]; then
+        echo "Уже установлена последняя сборка"
+    else
+        activate "$build"
+    fi
+    exit 0
+fi
+
+work=$(mktemp -d "$STATE/work.XXXXXX")
+
+# fetch NAME STRICT: download and check against sha256sums.txt. The published
+# sum for the ISO has been seen stale upstream, so for non-strict files a
+# mismatch is tolerated when the archive passes its own integrity test.
+media_checksum=ok
+fetch() {
+    local name=$1 strict=$2 want got
+    echo "Загрузка $name"
+    curl -fsSL --retry 3 --max-time 1800 -o "$work/$name" "$BASE/$name"
+    want=$(awk -v n="$name" '$2 == n {print $1}' <<<"$sums")
+    got=$(sha256sum "$work/$name" | cut -d' ' -f1)
+    [ "$want" = "$got" ] && return
+    if [ "$strict" = 1 ] || ! 7z t "$work/$name" >/dev/null; then
+        echo "Контрольная сумма $name не совпала (ожидалась $want, получена $got)"
+        exit 1
+    fi
+    echo "ВНИМАНИЕ: контрольная сумма $name не совпала с sha256sums.txt, но архив цел; продолжаю"
+    media_checksum=mismatch
+}
+fetch "$img_name" 1
+fetch "$iso_name" 0
+
+echo "Распаковка"
+7z x -y -o"$work/img" "$work/$img_name" >/dev/null
+7z x -y -o"$work/iso" "$work/$iso_name" >/dev/null
+img=$(find "$work/img" -iname 'kolibri.img' | head -1)
+iso=$(find "$work/iso" -iname '*.iso' | head -1)
+[ -f "$img" ] && [ -f "$iso" ] || { echo "В архивах нет kolibri.img или ISO"; exit 1; }
+7z x -y -o"$work/isofs" "$iso" kolibrios >/dev/null
+[ -d "$work/isofs/kolibrios" ] || { echo "В ISO нет папки kolibrios"; exit 1; }
+
+echo "Сборка диска медиа-пакета"
+dest="$ROOT/.$build.tmp"
+rm -rf "$dest"
+mkdir -p "$dest"
+size_mb=$(( $(du -sm "$work/isofs/kolibrios" | cut -f1) * 12 / 10 + 16 ))
+truncate -s "${size_mb}M" "$dest/media.img"
+echo 'start=2048, type=c' | sfdisk -q "$dest/media.img"
+mkfs.fat -F 32 -n KOLIBRIOS --offset 2048 "$dest/media.img" >/dev/null
+mcopy -s -i "$dest/media.img@@1M" "$work/isofs/kolibrios" ::/
+
+cp "$img" "$dest/kolibri.img"
+gzip -9 -k "$dest/kolibri.img"
+
+python3 - "$dest" "$build" "$(date -r "$img" +%F)" "$media_checksum" <<'EOF'
+import json, os, sys, datetime
+dest, build, date, media_checksum = sys.argv[1:]
+rel = f"os/{build}"
+meta = {
+    "build": build,
+    "date": date,
+    "img": f"{rel}/kolibri.img",
+    "media": f"{rel}/media.img",
+    "media_size": os.path.getsize(os.path.join(dest, "media.img")),
+    "media_checksum": media_checksum,
+    "installed": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+}
+json.dump(meta, open(os.path.join(dest, "meta.json"), "w"), ensure_ascii=False, indent=1)
+EOF
+
+rm -rf "${ROOT:?}/$build"
+mv "$dest" "$ROOT/$build"
+activate "$build"
+
+# Keep the newest $KEEP builds, never the current one.
+cur=$(current_build)
+ls -1t "$ROOT" | while read -r d; do
+    if [ -f "$ROOT/$d/meta.json" ] && [ "$d" != "$cur" ]; then echo "$d"; fi
+done | tail -n +"$KEEP" | while read -r old; do
+    echo "Удаление старой сборки $old"
+    rm -rf "${ROOT:?}/$old"
+done
+echo "Готово"

@@ -1,0 +1,15 @@
+[Unit]
+Description=Update KolibriOS images for the browser emulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+ExecStart=/usr/local/bin/kolibri-update
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/www/html/kolibri/os /var/lib/kolibri-update

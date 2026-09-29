@@ -1,0 +1,17 @@
+[Unit]
+Description=KolibriOS emulator admin backend
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+ExecStart=/usr/bin/python3 /usr/local/lib/kolibri/kolibri-admin.py
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/www/html/kolibri/os /var/lib/kolibri-update
+
+[Install]
+WantedBy=multi-user.target
