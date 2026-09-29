@@ -243,9 +243,12 @@ container.addEventListener("pointercancel", touchEnd);
 
 // ---------------------------------------------------------------- touchpad mode
 
-// The screen acts as a laptop touchpad: sliding moves the cursor from where it
-// is (faster slides go further), tap = left click, two fingers = wheel, two-
-// finger tap = right click. The bar below holds real buttons for dragging.
+// The whole area between the header and the bottom bars (the guest screen and
+// the empty space around it) acts as a laptop touchpad: sliding moves the
+// cursor from where it is (faster slides go further), tap = left click, two
+// fingers = wheel, two-finger tap = right click. The bar below holds real
+// buttons for dragging.
+const stage = $("stage");
 const pad = { on: false, pts: new Map(), moved: false, two: false, twoMoved: false, t0: 0, fx: 0, fy: 0, wheelAcc: 0 };
 
 function setPad(on) {
@@ -258,10 +261,11 @@ function setPad(on) {
 }
 $("btn-pad").onclick = () => setPad(!pad.on);
 
-container.addEventListener("pointerdown", e => {
+stage.addEventListener("touchstart", e => { if (pad.on) e.preventDefault(); }, { passive: false });
+stage.addEventListener("pointerdown", e => {
   if (e.pointerType === "mouse" || !graphical() || !pad.on) return;
   e.preventDefault();
-  container.setPointerCapture(e.pointerId);
+  stage.setPointerCapture(e.pointerId);
   const p = touchPoint(e);
   pad.pts.set(e.pointerId, { start: p, cur: p });
   if (pad.pts.size === 1) {
@@ -272,7 +276,7 @@ container.addEventListener("pointerdown", e => {
   }
 });
 
-container.addEventListener("pointermove", e => {
+stage.addEventListener("pointermove", e => {
   const t = pad.on && pad.pts.get(e.pointerId);
   if (!t) return;
   const prev = t.cur;
@@ -308,8 +312,8 @@ function padEnd(e) {
   if (pad.two) { if (!pad.twoMoved && quick) ptr.click(2); }
   else if (!pad.moved && quick) ptr.click(0);
 }
-container.addEventListener("pointerup", padEnd);
-container.addEventListener("pointercancel", padEnd);
+stage.addEventListener("pointerup", padEnd);
+stage.addEventListener("pointercancel", padEnd);
 
 // Mouse buttons bar: hold to keep a button down (drag with another finger).
 for (const b of document.querySelectorAll("#mouse-bar [data-btn]")) {

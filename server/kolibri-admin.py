@@ -18,7 +18,8 @@ ROOT = os.path.join(os.environ.get("KOLIBRI_ROOT", "/var/www/html/kolibri"), "os
 STATE = os.environ.get("KOLIBRI_STATE", "/var/lib/kolibri-update")
 LOG = os.path.join(STATE, "update.log")
 UPDATE = "/usr/local/bin/kolibri-update"
-SUMS_URL = "https://builds.kolibrios.org/ru_RU/sha256sums.txt"
+LANG = os.environ.get("KOLIBRI_LANG", "ru_RU")
+SUMS_URL = f"https://builds.kolibrios.org/{LANG}/sha256sums.txt"
 
 _upstream = {"at": 0, "build": None, "error": None}
 
@@ -127,4 +128,4 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", 8095), Handler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("KOLIBRI_ADMIN_PORT", "8095"))), Handler).serve_forever()

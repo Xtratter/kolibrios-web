@@ -11,8 +11,9 @@
 - **Два режима касаний.**
   - *Прямой:* касание — щелчок точно в этой точке, долгое нажатие — правая кнопка,
     провести пальцем — перетаскивание, двумя пальцами — прокрутка.
-  - *Тачпад:* палец двигает курсор, касание — щелчок; внизу кнопки ЛКМ, 2× и ПКМ, которые
-    можно удерживать.
+  - *Тачпад:* палец двигает курсор, касание — щелчок; работает вся область страницы,
+    включая поля над и под экраном системы. Внизу кнопки ЛКМ, 2× и ПКМ, которые можно
+    удерживать.
 - **Экранная клавиатура Android** и панель Esc, Tab, Ctrl, Alt, стрелок, F1–F12. Русские и
   латинские буквы вводятся вперемешку: раскладка внутри KolibriOS переключается сама.
 - **Мышь на компьютере** работает сразу, без захвата курсора.
@@ -30,6 +31,7 @@
 | `web/kmouse.js` | Точное (абсолютное) позиционирование курсора поверх относительной PS/2-мыши |
 | `web/kkeys.js` | Ввод текста скан-кодами с автоматическим переключением раскладки |
 | `web/admin/` | Админ-страница обновлений |
+| `install.sh` | Интерактивный установщик всего сайта на Debian/Ubuntu |
 | `server/kolibri-update` | Скачивает сборку, проверяет SHA-256, собирает образы, публикует |
 | `server/kolibri-admin.py` | API админ-страницы (только 127.0.0.1, за паролем nginx) |
 | `server/systemd/`, `server/nginx/` | Юниты и пример настроек nginx |
@@ -51,34 +53,82 @@
 
 ## Установка
 
-Нужны nginx, `curl`, `7zip`, `dosfstools`, `mtools`, `util-linux` (`sfdisk`) и Python 3.
+Нужен сервер на Debian или Ubuntu с правами root и примерно 600 МБ свободного места.
+Всё остальное (nginx, 7-Zip, инструменты FAT, Python, при желании certbot) ставит
+установщик.
 
 ```sh
-sudo apt install nginx curl 7zip dosfstools mtools python3
+git clone https://github.com/Xtratter/kolibrios-web
+cd kolibrios-web
+sudo ./install.sh
+```
 
-# Сайт
+Или одной командой, без клонирования вручную (скрипт сам скачает проект в
+`/opt/kolibrios-web`):
+
+```sh
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/Xtratter/kolibrios-web/main/install.sh)"
+```
+
+Установщик задаёт вопросы (у каждого есть значение по умолчанию, Enter его принимает):
+
+- **Домен.** Если оставить пустым, сайт откроется по IP-адресу сервера по HTTP.
+- **Как подключить к nginx.**
+  - *Отдельный сайт* — установщик создаст `server { }` сам и при желании получит бесплатный
+    HTTPS-сертификат Let's Encrypt.
+  - *Добавить к существующему сайту* — установщик создаст
+    `/etc/nginx/snippets/kolibrios.conf`, и вы подключите его строкой `include` в свой
+    `server { }`.
+- **Путь на сайте и каталог для файлов.** Например `/` или `/kolibri/`.
+- **Язык сборок KolibriOS:** русский, английский, испанский, итальянский или эстонский.
+- **Логин и пароль админ-страницы.** Пустой пароль — сгенерировать случайный.
+
+Затем он показывает сводку и после подтверждения делает всё сам:
+
+- ставит пакеты и раскладывает файлы сайта;
+- скачивает v86 и первую сборку KolibriOS;
+- настраивает nginx и HTTPS;
+- включает ежедневное обновление и админ-страницу.
+
+В конце он выводит адреса и пароль, пароль также сохраняется в `/root/kolibrios-admin.txt`.
+
+- **Обновить установку** (новая версия проекта, другие настройки) — запустите
+  `install.sh` снова. Прошлые ответы подставятся по умолчанию, скачанные сборки и пароль
+  сохранятся.
+- **Без вопросов:** `sudo ./install.sh --yes`. Ответы можно задать переменными окружения:
+  `DOMAIN`, `NGINX_MODE` (`site`/`snippet`), `PREFIX`, `WEBROOT`, `HTTPS`, `LE_EMAIL`,
+  `KOLIBRI_LANG`, `ADMIN_USER`, `ADMIN_PASSWORD`, `ADMIN_PORT`.
+- **Удалить:** `sudo ./install.sh --uninstall`. Каталог со скачанными сборками удаляется
+  только по отдельному подтверждению.
+
+Для HTTPS домен должен указывать на сервер, и порт 80 должен быть открыт. Без systemd
+(например, в контейнере) сайт установится, но обновление и админку придётся запускать
+вручную, установщик подскажет команды.
+
+<details>
+<summary>Установка вручную</summary>
+
+```sh
+sudo apt install nginx curl 7zip dosfstools mtools fdisk python3
 sudo mkdir -p /var/www/html/kolibri
 sudo cp -r web/* /var/www/html/kolibri/
 sudo scripts/fetch-v86.sh /var/www/html/kolibri
-
-# Обновления и админка
 sudo install -m 755 server/kolibri-update /usr/local/bin/
 sudo install -D -m 644 server/kolibri-admin.py /usr/local/lib/kolibri/kolibri-admin.py
 sudo cp server/systemd/* /etc/systemd/system/
 sudo install -d -o www-data -g www-data /var/lib/kolibri-update /var/www/html/kolibri/os
-sudo systemctl daemon-reload
-sudo systemctl start kolibri-update.service      # первая сборка, ~50 МБ загрузки
-sudo systemctl enable --now kolibri-update.timer kolibri-admin.service
 sudo chown -R www-data:www-data /var/www/html/kolibri
+sudo systemctl daemon-reload
+sudo systemctl start kolibri-update.service
+sudo systemctl enable --now kolibri-update.timer kolibri-admin.service
 ```
 
 Затем добавьте блоки из `server/nginx/kolibri.conf` в HTTPS-сервер nginx, создайте файл
-паролей админки (команда есть в комментарии) и выполните `sudo systemctl reload nginx`.
-Сайт откроется по адресу `https://ваш-домен/kolibri/`, админка — по `/kolibri/admin/`.
+паролей (команда есть в комментарии в этом файле) и перезагрузите nginx. Каталог, язык
+сборок и порт админки задаются переменными `KOLIBRI_ROOT`, `KOLIBRI_LANG` и
+`KOLIBRI_ADMIN_PORT`.
 
-Другой каталог задаётся переменной `KOLIBRI_ROOT` (по умолчанию `/var/www/html/kolibri`)
-для `kolibri-update` и `kolibri-admin.py`. В юнитах systemd поправьте `ReadWritePaths`.
-Язык сборки задаётся в `BASE` в `kolibri-update` (сейчас `ru_RU`).
+</details>
 
 ## Тесты
 

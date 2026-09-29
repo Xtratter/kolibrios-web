@@ -39,6 +39,8 @@
   #keys button { flex: none; min-width: 42px; padding: 8px 8px; font-size: 13px; }
   #keys .sep { flex: none; width: 1px; background: var(--line); margin: 2px 2px; }
 
+  body.pad-on #stage { touch-action: none; user-select: none; -webkit-user-select: none;
+                       background: radial-gradient(ellipse at center, #1a1a1a 0%, var(--bg) 70%); }
   #btn-pad { display: none; }
   body.touch #btn-pad { display: inline-flex; }
   #mouse-bar { display: none; flex: none; gap: 6px; padding: 6px; background: var(--bar); border-top: 1px solid var(--line); }
@@ -178,6 +180,7 @@
     <ul class="help">
       <li><b>Тачпад:</b> ведите пальцем — курсор движется (быстрее ведёте — дальше уходит),
         касание — щелчок, два пальца — прокрутка, касание двумя пальцами — правая кнопка.
+        Работает по всей области, включая пустые поля над и под экраном системы.
         Кнопки <b>ЛКМ</b>/<b>ПКМ</b> внизу можно удерживать и одновременно вести пальцем по экрану — так перетаскиваются окна</li>
       <li><b>Прямое касание</b> (тачпад выключен):</li>
       <li><b>Касание</b> — щелчок в этой точке, <b>двойное касание</b> — двойной щелчок</li>

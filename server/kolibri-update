@@ -11,12 +11,13 @@
 set -euo pipefail
 
 ROOT=${KOLIBRI_ROOT:-/var/www/html/kolibri}/os
-BASE=https://builds.kolibrios.org/ru_RU
+BASE=https://builds.kolibrios.org/${KOLIBRI_LANG:-ru_RU}
 STATE=${KOLIBRI_STATE:-/var/lib/kolibri-update}
 LOG=$STATE/update.log
 KEEP=3
 
 export MTOOLS_SKIP_CHECK=1 LC_ALL=C.UTF-8
+SZ=$(command -v 7z || command -v 7zz) || { echo "Нужен 7z (пакет 7zip или p7zip-full)" >&2; exit 1; }
 mkdir -p "$ROOT" "$STATE"
 
 exec 9>"$STATE/lock"
@@ -84,7 +85,7 @@ fetch() {
     want=$(awk -v n="$name" '$2 == n {print $1}' <<<"$sums")
     got=$(sha256sum "$work/$name" | cut -d' ' -f1)
     [ "$want" = "$got" ] && return
-    if [ "$strict" = 1 ] || ! 7z t "$work/$name" >/dev/null; then
+    if [ "$strict" = 1 ] || ! "$SZ" t "$work/$name" >/dev/null; then
         echo "Контрольная сумма $name не совпала (ожидалась $want, получена $got)"
         exit 1
     fi
@@ -95,12 +96,12 @@ fetch "$img_name" 1
 fetch "$iso_name" 0
 
 echo "Распаковка"
-7z x -y -o"$work/img" "$work/$img_name" >/dev/null
-7z x -y -o"$work/iso" "$work/$iso_name" >/dev/null
+"$SZ" x -y -o"$work/img" "$work/$img_name" >/dev/null
+"$SZ" x -y -o"$work/iso" "$work/$iso_name" >/dev/null
 img=$(find "$work/img" -iname 'kolibri.img' | head -1)
 iso=$(find "$work/iso" -iname '*.iso' | head -1)
 [ -f "$img" ] && [ -f "$iso" ] || { echo "В архивах нет kolibri.img или ISO"; exit 1; }
-7z x -y -o"$work/isofs" "$iso" kolibrios >/dev/null
+"$SZ" x -y -o"$work/isofs" "$iso" kolibrios >/dev/null
 [ -d "$work/isofs/kolibrios" ] || { echo "В ISO нет папки kolibrios"; exit 1; }
 
 echo "Сборка диска медиа-пакета"
